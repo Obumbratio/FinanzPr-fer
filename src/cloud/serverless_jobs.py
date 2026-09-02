@@ -86,11 +86,18 @@ class NebiusServerlessJobRunner:
                 response = self.client.chat.completions.create(
                     model=settings.MODEL_REASONING,
                     messages=[
-                        {"role": "system", "content": "Eres un auditor financiero institucional."},
+                        {
+                            "role": "system",
+                            "content": (
+                                "Eres un auditor financiero institucional de élite. Responde DIRECTAMENTE "
+                                "con el veredicto final en 2 oraciones concisas. No incluyas preámbulos, "
+                                "no repitas las instrucciones ni muestres notas internas."
+                            )
+                        },
                         {"role": "user", "content": prompt}
                     ],
                     max_tokens=150,
-                    temperature=0.2
+                    temperature=0.1
                 )
                 verdict = response.choices[0].message.content.strip()
 
