@@ -5,6 +5,7 @@ from src.config import settings
 from src.agent.orchestrator import FinanzOrchestrator
 from src.agent.fast_chat import FastChatCopilot
 from src.cloud.serverless_jobs import NebiusServerlessJobRunner
+from src.tools.risk_tool import RiskEngineTool
 from src.tools.report_tool import ReportGenerator
 
 # 1. Configuración de página y estilos
@@ -71,15 +72,26 @@ with st.sidebar:
     
     st.divider()
     
-    # Régimen Macro de Mercado
-    st.markdown("### 📊 Market Regime Heuristic")
+    # Régimen Macro de Mercado Dinámico (4 Estados Börsenhirn)
+    st.markdown("### 📊 4-State Macro Regime")
+    macro_info = RiskEngineTool.get_macro_market_regime(16.4)
+    
+    regime_colors = {
+        "PANIC": "🔴",
+        "BEAR": "🟠",
+        "SIDEWAYS": "🟡",
+        "BULL": "🟢"
+    }
+    regime_badge = regime_colors.get(macro_info["regime"], "⚪")
+
     col1, col2 = st.columns(2)
     with col1:
-        st.metric(label="VIX Est.", value="16.4", delta="-1.2%")
+        st.metric(label="VIX Proxy", value=f"{macro_info['vix_estimate']}", delta="-1.2%")
     with col2:
-        st.metric(label="Regime", value="ACCUMULATION")
+        st.metric(label="Macro State", value=f"{regime_badge} {macro_info['regime']}")
         
-    st.caption("Current state: *Moderate risk appetite with selective tech rotation.*")
+    st.caption(f"**Market Context:** *{macro_info['description']}*")
+    st.caption(f"**Posture:** `{macro_info['recommended_posture']}`")
     
     st.divider()
     
@@ -96,7 +108,7 @@ with st.sidebar:
         )
 
     st.divider()
-    st.warning("⚠️ **Educational Tool:** Not financial advice. Past results or heuristic scoring do not predict future market returns.")
+    st.warning("⚠️ **Educational Tool:** Not financial advice. See `legal/DISCLAIMER.md` for institutional compliance details.")
 
 # 3. Encabezado Principal y Pestañas de la Aplicación
 st.title("FinanzPrüfer — Institutional Due Diligence Platform")
@@ -136,11 +148,11 @@ with tab1:
             if fast_copilot.is_complex_query(active_prompt):
                 status_placeholder = st.status("🧠 Nemotron 3 Ultra orquestando auditoría profunda...", expanded=True)
                 try:
-                    status_placeholder.write("🔎 Verificando contexto y noticias en Tavily Search API...")
+                    status_placeholder.write("🔎 Verificando contexto y noticias en Tavily Search API (Circuit Breaker Protected)...")
                     time.sleep(0.3)
                     status_placeholder.write("📑 Consultando filings regulatorios en SEC EDGAR (Form 4 / 10-K)...")
                     time.sleep(0.3)
-                    status_placeholder.write("⚙️ Computando volatilidad estimada y Risk Score cuantitativo...")
+                    status_placeholder.write("⚙️ Computando régimen macro de 4 estados y Risk Score...")
 
                     response_text = orchestrator.run(active_prompt)
                     status_placeholder.update(label="✅ Auditoría completada con éxito", state="complete", expanded=False)
@@ -253,3 +265,10 @@ with tab2:
             mime="text/markdown",
             key="btn_download_batch_report"
         )
+
+# Pie de página institucional
+st.divider()
+st.caption(
+    "⚖️ **FinanzPrüfer 1.0.0** | Built with NVIDIA Nemotron on Nebius Token Factory & AI Cloud | "
+    "Read the full [Ethical & Regulatory Disclaimer](legal/DISCLAIMER.md) — Strictly for educational purposes."
+)
