@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 class FinanzOrchestrator:
     """
-    Orquestador agéntico con razonamiento dual (ReAct).
-    Utiliza Nemotron 3 Ultra en Nebius Token Factory para decidir autónomamente
-    qué herramientas auditan un activo financiero y mantiene memoria de contexto.
+    Orquestador agéntico institucional multi-hop (ReAct).
+    Utiliza NVIDIA Nemotron 3 Ultra en Nebius Token Factory para coordinar
+    auditorías cuantitativas, regulatorias y de consenso en un dossier unificado.
     """
     def __init__(self):
         self.client = OpenAI(
@@ -27,20 +27,16 @@ class FinanzOrchestrator:
         self.memory = AuditMemoryManager()
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
-        """Especificación JSON Schema de las herramientas disponibles."""
         return [
             {
                 "type": "function",
                 "function": {
                     "name": "search_market_news",
-                    "description": "Busca noticias financieras recientes y sentimiento de mercado en vivo.",
+                    "description": "Recupera noticias recientes, catalizadores fundamentales y eventos regulatorios del activo.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Consulta de búsqueda o evento financiero relevante."
-                            }
+                            "query": {"type": "string", "description": "Consulta de mercado o catalizador (ej. 'NVDA earnings guidance China rules')."}
                         },
                         "required": ["query"]
                     }
@@ -49,15 +45,26 @@ class FinanzOrchestrator:
             {
                 "type": "function",
                 "function": {
-                    "name": "get_insider_trades",
-                    "description": "Audita las transacciones de ejecutivos e insiders (SEC Form 4) para un ticker.",
+                    "name": "get_analyst_consensus",
+                    "description": "Recupera los ratings, consenso de Wall Street y precios objetivo a 12 meses (TipRanks / FactSet).",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "ticker": {
-                                "type": "string",
-                                "description": "Símbolo bursátil de la empresa (ej. NVDA, MSFT, AAPL)."
-                            }
+                            "ticker": {"type": "string", "description": "Símbolo bursátil de la empresa (ej. NVDA, TSLA)."}
+                        },
+                        "required": ["ticker"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_insider_trades",
+                    "description": "Audita presentaciones SEC Form 4 (compras y ventas de directivos) y metadatos del último 10-K.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {"type": "string", "description": "Símbolo bursátil a auditar en SEC EDGAR."}
                         },
                         "required": ["ticker"]
                     }
@@ -67,14 +74,11 @@ class FinanzOrchestrator:
                 "type": "function",
                 "function": {
                     "name": "calculate_risk_metrics",
-                    "description": "Calcula el Risk Score cuantitativo (0-100), régimen de mercado y volatilidad.",
+                    "description": "Calcula el Composite Risk Score cuantitativo (0-100), régimen macro, volatilidad y sesgo de insiders.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "ticker": {
-                                "type": "string",
-                                "description": "Símbolo bursátil a evaluar."
-                            }
+                            "ticker": {"type": "string", "description": "Símbolo bursátil objetivo."}
                         },
                         "required": ["ticker"]
                     }
@@ -83,87 +87,134 @@ class FinanzOrchestrator:
         ]
 
     def _execute_tool(self, name: str, arguments: Dict[str, Any]) -> str:
-        """Despachador determinista de herramientas."""
         try:
             if name == "search_market_news":
-                results = self.search_tool.search_market_news(query=arguments["query"], max_results=3)
-                return json.dumps(results)
+                res = self.search_tool.search_market_news(query=arguments["query"], max_results=3)
+                return json.dumps(res, ensure_ascii=False)
+            elif name == "get_analyst_consensus":
+                res = self.search_tool.get_analyst_consensus(ticker=arguments["ticker"])
+                return json.dumps(res, ensure_ascii=False)
             elif name == "get_insider_trades":
-                results = self.sec_tool.get_insider_trades(ticker=arguments["ticker"])
-                return json.dumps(results)
+                trades = self.sec_tool.get_insider_trades(ticker=arguments["ticker"], max_filings=5)
+                filing_summary = self.sec_tool.get_latest_filing_summary(ticker=arguments["ticker"])
+                return json.dumps({"form4_trades": trades, "latest_filing": filing_summary}, ensure_ascii=False)
             elif name == "calculate_risk_metrics":
-                results = self.risk_tool.evaluate_risk(ticker=arguments["ticker"])
-                # Guardar snapshot en memoria si se computaron métricas
-                if isinstance(results, dict) and "composite_risk_score" in results:
+                res = self.risk_tool.evaluate_risk(ticker=arguments["ticker"])
+                if isinstance(res, dict) and "composite_risk_score" in res:
                     self.memory.store_audit_snapshot(
                         ticker=arguments["ticker"],
-                        risk_score=results["composite_risk_score"],
-                        regime=results.get("regime", "NORMAL_REGIME"),
-                        summary=f"Risk Score {results['composite_risk_score']}/100, Tier: {results.get('risk_tier', 'N/A')}"
+                        risk_score=res["composite_risk_score"],
+                        regime=res.get("regime", "NORMAL_REGIME"),
+                        summary=f"Risk Score {res['composite_risk_score']}/100, Tier: {res.get('risk_tier', 'N/A')}"
                     )
-                return json.dumps(results)
+                return json.dumps(res, ensure_ascii=False)
             else:
                 return json.dumps({"error": f"Herramienta desconocida: {name}"})
         except Exception as e:
-            return json.dumps({"error": f"Fallo ejecutando {name}: {str(e)}"})
+            return json.dumps({"error": f"Fallo al ejecutar {name}: {str(e)}"})
 
     def run(self, user_prompt: str) -> str:
-        """Bucle agéntico ReAct: procesa consultas y sintetiza auditorías completas con memoria."""
+        """
+        Bucle ReAct multi-hop (hasta 4 turnos iterativos).
+        Garantiza la síntesis de un dossier con matriz de decisión binaria y métricas de capital de trabajo.
+        """
         comparative_context = self.memory.get_comparative_context()
 
-        system_instruction = (
-            "Eres FinanzPrüfer, un auditor financiero y de due diligence de nivel institucional. "
-            "Usa tus herramientas para recolectar evidencia fáctica (Tavily, SEC y Risk Engine). "
-            f"{comparative_context}\n"
-            "Si el usuario pregunta por un segundo activo o pide contrastar, compara sus métricas con el activo previo. "
-            "No inventes datos. Cita las métricas obtenidas con rigor analítico."
-        )
+        system_instruction = f"""Eres FinanzPrüfer, un auditor forense de riesgos y estratega de due diligence institucional.
+Coordina tus herramientas (Tavily, analistas, SEC EDGAR y Risk Engine) para fundamentar empíricamente cada afirmación.
 
-        messages = [{"role": "system", "content": system_instruction}]
+{comparative_context}
+
+REGLAS DE PRODUCCIÓN Y FORMATO:
+- PROHIBIDO usar el signo '$' para cantidades monetarias (escribe 'USD 225', 'USD 105 B' o 'dólares'). Reserva el prefijo '$' exclusivamente para tickers bursátiles ($NVDA, $TSLA). Esto es mandatorio para evitar que el renderizador de Markdown rompa el texto interpretándolo como ecuaciones matemáticas.
+- PROHIBIDO emitir monólogos internos o narrar tus intenciones (NUNCA digas: "Now I will search...", "Let me retrieve..."). Si requieres herramientas, emite la llamada de función directamente.
+- Cuando tengas la información suficiente, genera SIEMPRE tu veredicto final en español estructurado exactamente en los siguientes 5 bloques:
+
+1. RESUMEN EJECUTIVO & DECISIÓN BINARIA
+   - DECISIÓN DIRECTA: [SÍ / NO / SÍ SOLO CON COBERTURA]
+   - ASIGNACIÓN SUGERIDA: [% exacto del NAV de la cartera, ej. 3.0% a 3.5%]
+   - Composite Risk Score (0-100), Nivel de Riesgo y Régimen Macro.
+   - POR QUÉ SÍ: (Los 3 motores y catalizadores fundamentales más sólidos de la empresa).
+   - POR QUÉ NO A MERCADO ABIERTO HOY: (Las 3 banderas rojas y riesgos de cola izquierda).
+   - ZONAS DE PRECIO OPERATIVAS:
+     * Zona Cara / Distribución (> USD X)
+     * Zona Razonable / Entrada Escalonada (USD X - Y)
+     * Zona Strong Buy sin Cobertura (< USD Z)
+   - Diagnóstico de Asimetría: Contraste entre el optimismo público de Wall Street y las métricas reales de riesgo/insiders.
+
+2. PRONÓSTICO CUANTITATIVO Y CONSENSO
+   - Precio actual y Consenso de Wall Street (Price Target promedio a 12 meses y % Upside proyectado).
+   - Rango de 3 Escenarios: Bear Case (-1 std dev), Base Consenso, Bull Case (+1 std dev).
+   - Probabilidad estimada a 3 meses de superar al S&P 500 (vs. 50.9% media histórica del mercado).
+
+3. AUDITORÍA FORENSE REGULATORIA Y CAPITAL DE TRABAJO (SEC EDGAR)
+   - Resumen de transacciones recientes Form 4: distinguir ventas programadas bajo regla 10b5-1 de salidas discrecionales en fortaleza.
+   - 3 Factores de Estrés Contable y Capital de Trabajo:
+     1. Calidad de conversión de utilidades (Free Cash Flow vs Net Income y ratio OCF/NI).
+     2. Días de cobro de cuentas por cobrar (DSO) y variación de inventarios (DIO).
+     3. Estructura de deuda neta y riesgos de financiamiento circular del ecosistema.
+   - Concentración de negocio y factores de riesgo clave del último 10-K/10-Q.
+
+4. CATALIZADORES Y SENTIMIENTO EN VIVO (TAVILY)
+   - Tailwinds operacionales (demanda de arquitectura, expansión de márgenes).
+   - Riesgos geopolíticos, regulatorios y cuellos de botella de suministro.
+
+5. GUÍA DE ASIGNACIÓN Y ESTRUCTURA DE COBERTURA
+   - Límite de asignación aconsejado (% máximo del NAV de la cartera).
+   - Parámetros de cobertura con derivados para proteger la cola izquierda (ej. Long Put Spread financiado o Collar táctico).
+   - Nivel técnico o trigger fundamental de invalidación de tesis (Hard Stop).
+
+NOTA LEGAL: Concluye siempre con la cláusula: 'Herramienta heurística educativa — Not financial advice.'"""
+
+        messages = [
+            {"role": "system", "content": system_instruction}
+        ]
         messages.extend(self.memory.get_recent_messages()[-4:])
         messages.append({"role": "user", "content": user_prompt})
 
         tools = self.get_tool_definitions()
 
-        # 1. Primera pasada: Nemotron decide qué herramientas invocar
-        response = self.client.chat.completions.create(
-            model=settings.MODEL_REASONING,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-            temperature=0.2
-        )
+        # Bucle ReAct Multi-Hop (máximo 4 iteraciones de llamadas a herramientas)
+        for _ in range(4):
+            response = self.client.chat.completions.create(
+                model=settings.MODEL_REASONING,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                temperature=0.1
+            )
+            response_message = response.choices[0].message
 
-        response_message = response.choices[0].message
+            # Si el modelo no pide más herramientas, tenemos el informe final
+            if not response_message.tool_calls:
+                final_text = response_message.content or getattr(response_message, "reasoning_content", None) or "No se pudo generar el dossier."
+                self.memory.add_message("user", user_prompt)
+                self.memory.add_message("assistant", final_text)
+                return final_text
 
-        # 2. Si el modelo solicita llamadas a herramientas
-        if response_message.tool_calls:
+            # Procesar las herramientas requeridas en este turno
             messages.append(response_message)
-
             for tool_call in response_message.tool_calls:
                 fn_name = tool_call.function.name
-                fn_args = json.loads(tool_call.function.arguments)
-                tool_output = self._execute_tool(fn_name, fn_args)
+                try:
+                    fn_args = json.loads(tool_call.function.arguments)
+                except Exception:
+                    fn_args = {}
+                tool_result = self._execute_tool(fn_name, fn_args)
 
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": tool_output
+                    "content": tool_result
                 })
 
-            # 3. Segunda pasada: Nemotron sintetiza los datos en un dossier
-            final_response = self.client.chat.completions.create(
-                model=settings.MODEL_REASONING,
-                messages=messages,
-                temperature=0.2
-            )
-            res = final_response.choices[0].message
-            verdict = res.content or getattr(res, "reasoning_content", None) or "No se pudo generar respuesta."
-        else:
-            verdict = response_message.content or getattr(response_message, "reasoning_content", None) or "No se pudo generar respuesta."
-
-        # Registrar en la memoria conversacional
+        # Cierre forzado tras agotar iteraciones
+        final_response = self.client.chat.completions.create(
+            model=settings.MODEL_REASONING,
+            messages=messages,
+            temperature=0.1
+        )
+        final_text = final_response.choices[0].message.content or getattr(final_response.choices[0].message, "reasoning_content", None) or "Auditoría completada."
         self.memory.add_message("user", user_prompt)
-        self.memory.add_message("assistant", verdict)
-
-        return verdict
+        self.memory.add_message("assistant", final_text)
+        return final_text

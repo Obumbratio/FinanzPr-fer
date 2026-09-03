@@ -47,7 +47,7 @@ class RiskEngineTool:
         
         # Mapeo determinista de regímenes base para auditoría institucional
         tech_high_beta = ["NVDA", "TSLA", "AMD", "PLTR", "META", "COIN"]
-        stable_mega_caps = ["AAPL", "MSFT", "GOOGL", "JPM", "KO", "BRK.B"]
+        stable_mega_caps = ["AAPL", "MSFT", "GOOGL", "JPM", "KO", "BRK.B", "SPY", "QQQ", "DIA", "IWM"]
         
         if ticker in tech_high_beta:
             base_volatility = 0.38
