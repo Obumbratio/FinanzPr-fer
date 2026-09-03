@@ -1,4 +1,13 @@
+import sys
 import time
+sys.path.insert(0, ".")
+
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from openai import OpenAI
 from src.config import settings
 
@@ -13,16 +22,14 @@ def test_nemotron_connection():
     print(f"Modelo objetivo: {settings.MODEL_REASONING}")
     print("Enviando prompt de prueba...\n")
 
-    # 2. Inicializar cliente OpenAI compatible con Nebius
     client = OpenAI(
         base_url=settings.NEBIUS_BASE_URL,
         api_key=settings.NEBIUS_API_KEY
     )
 
     prompt = (
-        "Actúa como FinanzPrüfer, auditor financiero de élite. "
-        "En una sola oración concisa, explica qué riesgo evalúa "
-        "un análisis de concentración en el formulario SEC 13F."
+        "Explica brevemente en un solo párrafo qué es el riesgo de concentración "
+        "en una auditoría de filings regulatorios (Form 13F)."
     )
 
     start_time = time.time()
@@ -30,31 +37,25 @@ def test_nemotron_connection():
         response = client.chat.completions.create(
             model=settings.MODEL_REASONING,
             messages=[
-                {"role": "system", "content": "Eres un asistente de due diligence financiero riguroso."},
+                {"role": "system", "content": "Eres un auditor financiero institucional de alto nivel."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
-            max_tokens=150
+            max_tokens=250
         )
         latency = time.time() - start_time
 
-        # 3. Resultados y telemetría
-        content = response.choices[0].message.content
-        usage = response.usage
-
         print("[CONEXIÓN EXITOSA]")
-        print(f"Respuesta:\n{content.strip()}\n")
-        print("-" * 60)
+        print("Respuesta:")
+        print(response.choices[0].message.content)
+        print("\n" + "-" * 60)
         print(f"Latencia: {latency:.2f} segundos")
-        if usage:
-            print(f"Tokens Prompt (Entrada):     {usage.prompt_tokens}")
-            print(f"Tokens Completion (Salida):  {usage.completion_tokens}")
-            print(f"Tokens Totales:              {usage.total_tokens}")
+        print(f"Tokens Prompt (Entrada):     {response.usage.prompt_tokens}")
+        print(f"Tokens Completion (Salida):  {response.usage.completion_tokens}")
+        print(f"Tokens Totales:              {response.usage.total_tokens}")
         print("=" * 60)
-
     except Exception as e:
-        print(f"\n[FALLO DE CONEXIÓN] Ocurrió un error al contactar Nebius Token Factory:")
-        print(f"Detalle del error: {e}")
+        print(f"[ERROR]: Fallo al conectar con Nebius AI Cloud: {e}")
 
 if __name__ == "__main__":
     test_nemotron_connection()

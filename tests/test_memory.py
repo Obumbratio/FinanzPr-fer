@@ -1,3 +1,12 @@
+import sys
+sys.path.insert(0, ".")
+
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from src.agent.memory import AuditMemoryManager
 
 def test_audit_memory():

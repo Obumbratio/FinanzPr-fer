@@ -1,4 +1,13 @@
+import sys
 import time
+sys.path.insert(0, ".")
+
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from src.config import settings
 from src.cloud.serverless_jobs import NebiusServerlessJobRunner
 
