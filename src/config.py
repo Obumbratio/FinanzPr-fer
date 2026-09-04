@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -11,7 +10,7 @@ class Settings:
     NEBIUS_API_KEY: str = os.getenv("NEBIUS_API_KEY", "")
     NEBIUS_BASE_URL: str = os.getenv("NEBIUS_BASE_URL", "https://api.studio.nebius.ai/v1")
     
-    # Modelos NVIDIA
+    # Modelos NVIDIA verificados en Nebius Token Factory
     MODEL_REASONING: str = os.getenv("MODEL_REASONING", "nvidia/Nemotron-3-Ultra-550b-a55b")
     MODEL_FAST: str = os.getenv("MODEL_FAST", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B")
     
@@ -23,8 +22,6 @@ class Settings:
     def validate_nebius(cls) -> None:
         """Verifica que las credenciales de Nebius no sean nulas ni los valores por defecto."""
         if not cls.NEBIUS_API_KEY or cls.NEBIUS_API_KEY == "tu_clave_aqui":
-            print("[ERROR CRÍTICO] NEBIUS_API_KEY no está configurada en el archivo .env")
-            print("Por favor, edita .env y coloca tu API Key de Nebius Token Factory.")
-            sys.exit(1)
+            raise ValueError("NEBIUS_API_KEY no configurada o inválida.")
 
 settings = Settings()

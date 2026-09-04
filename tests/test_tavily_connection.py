@@ -32,24 +32,28 @@ def test_tavily_search():
 
     start_time = time.time()
     try:
-        results = search_tool.search_market_news(query=query, max_results=3)
+        response = search_tool.search_market_news(query=query, max_results=3)
         latency = time.time() - start_time
 
+        items = response.get("results", []) if isinstance(response, dict) else response
+
         print(f"[CONEXIÓN EXITOSA - Latencia: {latency:.2f}s]")
-        print(f"Resultados recuperados: {len(results)}\n")
+        print(f"Status: {response.get('status', 'N/A') if isinstance(response, dict) else 'SUCCESS'}")
+        print(f"Resultados recuperados: {len(items)}\n")
         print("-" * 65)
 
-        for i, item in enumerate(results, 1):
-            title = item.get("title", "N/A")
-            url = item.get("url", "N/A")
-            snippet = item.get("content", "")[:120] + "..."
-            score = item.get("score", 0.0)
-            date = item.get("published_date", "N/A")
+        for i, item in enumerate(items, 1):
+            if isinstance(item, dict):
+                title = item.get("title", "N/A")
+                url = item.get("url", "N/A")
+                snippet = item.get("content", "")[:120] + "..."
+                score = item.get("score", 0.0)
+                date = item.get("published_date", "N/A")
 
-            print(f"{i}. {title}")
-            print(f"   URL:   {url}")
-            print(f"   Score: {score} | Fecha: {date}")
-            print(f"   Cuerpo: {snippet}\n")
+                print(f"{i}. {title}")
+                print(f"   URL:   {url}")
+                print(f"   Score: {score} | Fecha: {date}")
+                print(f"   Cuerpo: {snippet}\n")
         
         print("=" * 65)
     except Exception as e:

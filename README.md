@@ -11,8 +11,8 @@ Autonomous financial intelligence and due diligence platform submitted to the **
 
 ## Architecture Overview
 FinanzPrüfer implements a dual-tier agentic architecture:
-* **Reasoning Engine (ReAct):** `nvidia/Nemotron-3-Ultra` via Nebius Token Factory for multi-tool orchestration, SEC parsing, and risk evaluation.
-* **Fast Conversational Copilot:** `nvidia/Nemotron-Nano` via Nebius Token Factory for rapid conceptual and educational financial queries.
+* **Reasoning Engine (ReAct):** `nvidia/Nemotron-3-Ultra-550b-a55b` via Nebius Token Factory for multi-tool orchestration, SEC parsing, and risk evaluation.
+* **Fast Conversational Copilot:** `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` via Nebius Token Factory for rapid conceptual and educational financial queries.
 * **Live Market Intelligence:** Real-time search runtime calls via **Tavily Search API**.
 * **Regulatory Auditing:** Automated SEC EDGAR integration (Form 4 insider transactions and 10-K risk disclosures).
 * **Asynchronous Batch Processing:** Background portfolio auditing inspired by **Nebius Serverless Jobs** architecture.

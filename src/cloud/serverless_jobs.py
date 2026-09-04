@@ -72,15 +72,27 @@ class NebiusServerlessJobRunner:
             try:
                 # 1. Extracción de métricas heurísticas y regulatorias
                 risk_metrics = self.risk_tool.evaluate_risk(ticker)
-                insider_trades = self.sec_tool.get_insider_trades(ticker, max_filings=3)
-                news = self.search_tool.search_market_news(f"{ticker} stock news", max_results=2)
+                insider_data = self.sec_tool.get_insider_trades(ticker, max_filings=3)
+                news_data = self.search_tool.search_market_news(f"{ticker} stock news", max_results=2)
+
+                insider_count = (
+                    insider_data.get("count", len(insider_data.get("trades", [])))
+                    if isinstance(insider_data, dict)
+                    else (len(insider_data) if isinstance(insider_data, list) else 0)
+                )
+
+                news_titles = (
+                    [item.get("title", "") for item in news_data.get("results", [])]
+                    if isinstance(news_data, dict)
+                    else [item.get("title", "") for item in news_data if isinstance(item, dict)]
+                )
 
                 # 2. Síntesis condensada vía Nemotron 3 Ultra
                 prompt = (
                     f"Sintetiza un veredicto de due diligence para ${ticker} en 2 oraciones concisas.\n"
                     f"Risk Metrics: {json.dumps(risk_metrics)}\n"
-                    f"Insider Activity: {len(insider_trades)} registros Form 4 recientes.\n"
-                    f"Headline Context: {[n.get('title') for n in news]}"
+                    f"Insider Activity: {insider_count} registros Form 4 reportados.\n"
+                    f"Headline Context: {news_titles}"
                 )
 
                 response = self.client.chat.completions.create(
@@ -99,18 +111,44 @@ class NebiusServerlessJobRunner:
                     max_tokens=150,
                     temperature=0.1
                 )
-                verdict = response.choices[0].message.content.strip()
 
-                job["results"][ticker] = {
-                    "risk_score": risk_metrics.get("composite_risk_score"),
-                    "risk_tier": risk_metrics.get("risk_tier"),
-                    "regime": risk_metrics.get("regime"),
-                    "insider_signals": len(insider_trades),
-                    "verdict": verdict
-                }
+                # Validación defensiva de respuesta
+                if (
+                    response 
+                    and response.choices 
+                    and response.choices[0].message 
+                    and response.choices[0].message.content
+                ):
+                    verdict = response.choices[0].message.content.strip()
+                    job["results"][ticker] = {
+                        "risk_score": risk_metrics.get("composite_risk_score"),
+                        "risk_tier": risk_metrics.get("risk_tier"),
+                        "regime": risk_metrics.get("regime"),
+                        "insider_signals": insider_count,
+                        "verdict": verdict,
+                        "status": "COMPLETED"
+                    }
+                else:
+                    job["results"][ticker] = {
+                        "risk_score": risk_metrics.get("composite_risk_score"),
+                        "risk_tier": risk_metrics.get("risk_tier"),
+                        "regime": risk_metrics.get("regime"),
+                        "insider_signals": insider_count,
+                        "verdict": "Inferencia no disponible o nula devuelta por el modelo.",
+                        "status": "FAILED"
+                    }
 
             except Exception as e:
+                logger.error(f"Error procesando {ticker} en batch worker: {e}")
                 job["errors"].append({"ticker": ticker, "error": str(e)})
+                job["results"][ticker] = {
+                    "risk_score": None,
+                    "risk_tier": "ERROR",
+                    "regime": "N/A",
+                    "insider_signals": 0,
+                    "verdict": f"Fallo de ejecución: {str(e)}",
+                    "status": "FAILED"
+                }
 
             job["processed_items"] = idx
             job["progress"] = round((idx / total) * 100, 1)
@@ -154,10 +192,12 @@ class NebiusServerlessJobRunner:
         ]
 
         for ticker, data in job["results"].items():
-            clean_verdict = data['verdict'].replace("\n", " ")
+            clean_verdict = str(data.get("verdict", "")).replace("\n", " ")
+            sc = data.get("risk_score")
+            score_str = f"{sc}/100" if sc is not None else "N/A"
             md.append(
-                f"| **${ticker}** | {data['risk_score']}/100 | {data['risk_tier']} | "
-                f"`{data['regime']}` | {clean_verdict} |"
+                f"| **${ticker}** | {score_str} | {data.get('risk_tier', 'N/A')} | "
+                f"`{data.get('regime', 'N/A')}` | {clean_verdict} |"
             )
 
         return "\n".join(md)

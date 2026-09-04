@@ -7,12 +7,14 @@ import streamlit as st
 from src.config import settings
 from src.agent.orchestrator import FinanzOrchestrator
 from src.agent.fast_chat import FastChatCopilot
+from src.agent.memory import AuditMemoryManager
 from src.cloud.serverless_jobs import NebiusServerlessJobRunner
 from src.tools.report_tool import ReportGenerator
 from src.tools.risk_tool import RiskEngineTool
+from src.tools.search_tool import FinancialSearchTool
 
 # ─────────────────────────────────────────────────────────────
-# 1. CONFIGURACIÓN DE PÁGINA
+# 1. CONFIGURACIÓN DE PÁGINA Y VALIDACIÓN AL ARRANQUE
 # ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="FinanzPrüfer — Sovereign Due Diligence Console",
@@ -20,6 +22,17 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Validación de entorno al inicio (Fail-Safe)
+try:
+    settings.validate_nebius()
+except ValueError as e:
+    st.error(
+        f"🚨 **Error de Configuración Crítico:** {str(e)}\n\n"
+        "Por favor, configure una clave válida en la variable `NEBIUS_API_KEY` dentro del archivo `.env` "
+        "para inicializar la inferencia con NVIDIA Nemotron en Nebius Token Factory."
+    )
+    st.stop()
 
 # ─────────────────────────────────────────────────────────────
 # 2. INYECCIÓN CSS: NEMOTRON SOVEREIGN CONSOLE
@@ -103,6 +116,7 @@ header[data-testid="stHeader"] {
 .telemetry-cell b { color: #95A08C; font-weight: 500; }
 .telemetry-cell.ok b { color: var(--green); }
 .telemetry-cell.wait b { color: var(--amber); }
+.telemetry-cell.err b { color: var(--red); }
 
 /* Tarjetas Facetadas */
 .faceted-box {
@@ -263,30 +277,36 @@ def clean_html(html: str) -> str:
     return "".join(line.strip() for line in html.splitlines())
 
 # ─────────────────────────────────────────────────────────────
-# 3. GESTIÓN DE RECURSOS Y ESTADO
+# 3. GESTIÓN DE RECURSOS CON AISLAMIENTO DE SESIÓN
 # ─────────────────────────────────────────────────────────────
+# Herramientas globales sin estado compartido
 @st.cache_resource
-def load_orchestrator():
-    return FinanzOrchestrator()
-
-@st.cache_resource
-def load_fast_copilot():
-    return FastChatCopilot()
-
-@st.cache_resource
-def load_batch_runner():
-    return NebiusServerlessJobRunner()
+def load_search_tool():
+    return FinancialSearchTool()
 
 @st.cache_resource
 def load_risk_tool():
     return RiskEngineTool()
 
-orchestrator = load_orchestrator()
-fast_copilot = load_fast_copilot()
-batch_runner = load_batch_runner()
-risk_tool = load_risk_tool()
+@st.cache_resource
+def load_fast_copilot():
+    return FastChatCopilot()
 
-# Inicializar sesión
+search_tool = load_search_tool()
+risk_tool = load_risk_tool()
+fast_copilot = load_fast_copilot()
+
+# Aislamiento estricto por usuario en session_state
+if "memory" not in st.session_state:
+    st.session_state.memory = AuditMemoryManager()
+
+if "batch_runner" not in st.session_state:
+    st.session_state.batch_runner = NebiusServerlessJobRunner()
+
+orchestrator = FinanzOrchestrator(memory=st.session_state.memory)
+batch_runner = st.session_state.batch_runner
+
+# Inicializar historial de chat
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {
@@ -310,16 +330,27 @@ if "active_job_id" not in st.session_state:
     st.session_state.active_job_id = None
 
 # ─────────────────────────────────────────────────────────────
-# 4. RENDERIZADORES HTML DINÁMICOS (SANITIZADOS)
+# 4. RENDERIZADORES HTML DINÁMICOS (TELEMETRÍA REAL)
 # ─────────────────────────────────────────────────────────────
 def render_telemetry_bar(job_status_label: str = "IDLE"):
+    has_nebius = bool(settings.NEBIUS_API_KEY and settings.NEBIUS_API_KEY != "tu_clave_aqui")
+    has_tavily = search_tool.is_configured()
+
+    token_factory_class = "ok" if has_nebius else "err"
+    token_factory_led = "led-green" if has_nebius else "led-red"
+    token_factory_txt = "ONLINE" if has_nebius else "OFFLINE"
+
+    tavily_class = "ok" if has_tavily else "wait"
+    tavily_led = "led-green" if has_tavily else "led-amber"
+    tavily_txt = "CONN" if has_tavily else "UNCONFIG"
+
     html = f"""
     <div class="telemetry-strip">
         <div style="display:flex; align-items:center;">
-            <div class="telemetry-cell ok"><span class="led led-green"></span>TOKEN FACTORY: <b>ONLINE</b></div>
+            <div class="telemetry-cell {token_factory_class}"><span class="led {token_factory_led}"></span>TOKEN FACTORY: <b>{token_factory_txt}</b></div>
             <div class="telemetry-cell ok"><span class="led led-green"></span>NEMOTRON ULTRA: <b>READY</b></div>
             <div class="telemetry-cell ok"><span class="led led-green"></span>NEMOTRON NANO: <b>READY</b></div>
-            <div class="telemetry-cell ok"><span class="led led-green"></span>TAVILY: <b>CONN</b></div>
+            <div class="telemetry-cell {tavily_class}"><span class="led {tavily_led}"></span>TAVILY: <b>{tavily_txt}</b></div>
             <div class="telemetry-cell wait"><span class="led led-amber"></span>JOBS QUEUE: <b>{job_status_label}</b></div>
             <div style="display:inline-flex; align-items:center; color:var(--mid);">
                 REGIME: <span style="color:var(--hi); margin-left:5px;">[VIX 16.4 · ACCUMULATION]</span>
@@ -474,7 +505,7 @@ with tab_terminal:
             st.markdown(clean_html(f"<div class='faceted-box'>{gauge_html}{bars_html}</div>"), unsafe_allow_html=True)
             
             # Tarjeta de Memoria
-            mem_card = render_memory_card(orchestrator.memory.last_audited_entity)
+            mem_card = render_memory_card(st.session_state.memory.last_audited_entity)
             if mem_card:
                 st.markdown(mem_card, unsafe_allow_html=True)
 
@@ -534,57 +565,68 @@ with tab_terminal:
                 with st.chat_message("assistant"):
                     # Detectar intención de auditoría cuantitativa vs. diálogo ágil
                     if fast_copilot.is_complex_query(active_prompt):
-                        status_box = st.status("🧠 Nemotron 3 Ultra ReAct Loop Initiated...", expanded=True)
-                        try:
-                            status_box.write("🔎 [01] tavily_search -> Querying real-time market sentiment & headlines...")
-                            time.sleep(0.3)
-                            status_box.write("📑 [02] sec_edgar -> Parsing Form 4 insider transactions & 10-K...")
-                            time.sleep(0.3)
-                            status_box.write("⚙️ [03] risk_engine -> Computing deterministic 4-state volatility metrics...")
-
-                            # Extraer ticker o mapear consultas de mercado general a $SPY
-                            tickers_found = re.findall(r"\$([A-Za-z]{1,5})\b", active_prompt)
-                            if tickers_found:
-                                target_ticker = tickers_found[0].upper()
+                        # Extracción explícita de ticker (sin inventar tickers por defecto)
+                        tickers_found = re.findall(r"\$([A-Za-z]{1,5})\b", active_prompt)
+                        target_ticker = None
+                        
+                        if tickers_found:
+                            target_ticker = tickers_found[0].upper()
+                        else:
+                            macro_triggers = ["mercado", "eeuu", "sp500", "s&p", "macro", "market", "panorama", "fed", "tasas", "inflacion"]
+                            if any(w in active_prompt.lower() for w in macro_triggers):
+                                target_ticker = "SPY"
                             else:
-                                macro_triggers = ["mercado", "eeuu", "sp500", "s&p", "macro", "market", "panorama", "fed", "tasas", "inflacion"]
-                                if any(w in active_prompt.lower() for w in macro_triggers):
-                                    target_ticker = "SPY"
-                                else:
-                                    known_symbols = ["NVDA", "TSLA", "MSFT", "AAPL", "PLTR", "AMD", "SPY", "QQQ", "DIA"]
-                                    target_ticker = next((s for s in known_symbols if s in active_prompt.upper()), "NVDA")
+                                known_symbols = ["NVDA", "TSLA", "MSFT", "AAPL", "PLTR", "AMD", "SPY", "QQQ", "DIA", "GOOGL", "AMZN", "META"]
+                                target_ticker = next((s for s in known_symbols if re.search(rf"\b{re.escape(s)}\b", active_prompt.upper())), None)
 
-                            # Ejecutar evaluación de riesgo para los instrumentos
-                            eval_metrics = risk_tool.evaluate_risk(target_ticker)
-                            st.session_state.current_metrics = eval_metrics
-                            st.session_state.last_ticker = target_ticker
-
-                            # Inferencia multi-hop con Nemotron 3 Ultra
-                            agent_response = orchestrator.run(active_prompt)
-
-                            # Actualizar memoria y generar dossier Markdown
-                            orchestrator.memory.store_audit_snapshot(
-                                ticker=target_ticker,
-                                risk_score=eval_metrics["composite_risk_score"],
-                                regime=eval_metrics["regime"],
-                                summary=agent_response
+                        # Si la consulta de auditoría no especifica ningún ticker
+                        if not target_ticker:
+                            msg_no_ticker = (
+                                "⚠️ **Símbolo bursátil no especificado:** Por favor incluye un ticker para auditar "
+                                "(por ejemplo `$NVDA`, `$TSLA`, `$AAPL`, o `$SPY` para el mercado general)."
                             )
+                            st.warning(msg_no_ticker)
+                            st.session_state.messages.append({"role": "assistant", "content": msg_no_ticker})
+                        else:
+                            status_box = st.status(f"🧠 Nemotron 3 Ultra ReAct Loop: ${target_ticker}...", expanded=True)
+                            try:
+                                status_box.write("🔎 [01] tavily_search -> Querying real-time market sentiment & headlines...")
+                                time.sleep(0.3)
+                                status_box.write("📑 [02] sec_edgar -> Parsing Form 4 insider transactions & 10-K...")
+                                time.sleep(0.3)
+                                status_box.write("⚙️ [03] risk_engine -> Computing deterministic 4-state volatility metrics...")
 
-                            dossier_text = ReportGenerator.create_markdown_dossier(
-                                ticker=target_ticker,
-                                analysis_text=agent_response,
-                                user_prompt=active_prompt
-                            )
-                            st.session_state.last_report = dossier_text
+                                # Ejecutar evaluación de riesgo para los instrumentos
+                                eval_metrics = risk_tool.evaluate_risk(target_ticker)
+                                st.session_state.current_metrics = eval_metrics
+                                st.session_state.last_ticker = target_ticker
 
-                            status_box.update(label="✅ Full Due Diligence Audit Synthesized", state="complete", expanded=False)
-                            st.markdown(agent_response)
-                            st.session_state.messages.append({"role": "assistant", "content": agent_response})
-                            st.rerun()
+                                # Inferencia multi-hop con Nemotron 3 Ultra
+                                agent_response = orchestrator.run(active_prompt)
 
-                        except Exception as e:
-                            status_box.update(label="❌ Agent Execution Interrupted", state="error")
-                            st.error(f"Error executing agent loop: {str(e)}")
+                                # Actualizar memoria y generar dossier Markdown
+                                st.session_state.memory.store_audit_snapshot(
+                                    ticker=target_ticker,
+                                    risk_score=eval_metrics["composite_risk_score"],
+                                    regime=eval_metrics["regime"],
+                                    summary=agent_response
+                                )
+
+                                dossier_text = ReportGenerator.create_markdown_dossier(
+                                    ticker=target_ticker,
+                                    analysis_text=agent_response,
+                                    user_prompt=active_prompt
+                                )
+                                st.session_state.last_report = dossier_text
+
+                                status_box.update(label="✅ Full Due Diligence Audit Synthesized", state="complete", expanded=False)
+                                st.markdown(agent_response)
+                                st.session_state.messages.append({"role": "assistant", "content": agent_response})
+                                st.rerun()
+
+                            except Exception as e:
+                                status_box.update(label="❌ Agent Execution Interrupted", state="error")
+                                st.error(f"Error executing agent loop: {str(e)}")
                     else:
                         # Respuesta rápida / Planificación con Nemotron Nano
                         with st.spinner("⚡ Nemotron Nano synthesizing strategic guidance..."):
@@ -593,7 +635,7 @@ with tab_terminal:
                             st.session_state.messages.append({"role": "assistant", "content": nano_response})
 
 # ─────────────────────────────────────────────────────────────
-# 7. PESTAÑA 2: NEBIUS CLOUD BATCH WATCHLIST
+# 7. PESTAÑA 2: NEBIUS CLOUD BATCH WATCHLIST (NON-BLOCKING)
 # ─────────────────────────────────────────────────────────────
 with tab_batch:
     batch_col1, batch_col2 = st.columns([40, 60])
@@ -614,29 +656,34 @@ with tab_batch:
             st.session_state.active_job_id = job_id
             st.rerun()
 
-        # Monitoreo de Job Activo
+        # Monitoreo reactivo NO bloqueante
         if st.session_state.active_job_id:
             job_id = st.session_state.active_job_id
+            info = batch_runner.get_job_status(job_id)
+            st_val = info.get("status", "UNKNOWN")
+            pr_str = str(info.get("progress", "0%")).replace("%", "")
+            try:
+                pr_float = float(pr_str) / 100.0
+            except ValueError:
+                pr_float = 0.0
+
             st.markdown(clean_html(f"<div class='faceted-box'><div class='nsc-mono' style='font-size:11px;'>JOB ID: <b>{job_id}</b></div></div>"), unsafe_allow_html=True)
             
-            prog_bar = st.progress(0.0)
-            status_text = st.empty()
+            st.progress(pr_float)
+            st.markdown(
+                clean_html(
+                    f"<div class='nsc-mono' style='font-size:10.5px; color:var(--mid); margin-bottom:8px;'>"
+                    f"STATUS: <span style='color:var(--green);'>{st_val}</span> | ASSETS: {info.get('processed', '0/0')}"
+                    f"</div>"
+                ), 
+                unsafe_allow_html=True
+            )
 
-            # Polling reactivo
-            while True:
-                info = batch_runner.get_job_status(job_id)
-                st_val = info["status"]
-                pr_str = info["progress"].replace("%", "")
-                pr_float = float(pr_str) / 100.0
-
-                prog_bar.progress(pr_float)
-                status_text.markdown(clean_html(f"<div class='nsc-mono' style='font-size:10.5px; color:var(--mid);'>STATUS: <span style='color:var(--green);'>{st_val}</span> | ASSETS: {info['processed']}</div>"), unsafe_allow_html=True)
-
-                if st_val in ["COMPLETED", "FAILED"]:
-                    break
-                time.sleep(1.2)
-
-            st.success("Batch Watchlist audit successfully completed.")
+            if st_val in ["QUEUED", "RUNNING"]:
+                time.sleep(1.0)
+                st.rerun()
+            elif st_val == "COMPLETED":
+                st.success("Batch Watchlist audit successfully completed.")
 
     with batch_col2:
         st.markdown(clean_html("<div class='faceted-box'><h4 class='nsc-title' style='margin:0 0 10px 0; font-size:15px; color:var(--hi);'>PORTFOLIO RISK LADDER</h4></div>"), unsafe_allow_html=True)
@@ -656,17 +703,19 @@ with tab_batch:
 
                 st.markdown("<div style='margin-top:16px;'>", unsafe_allow_html=True)
                 # Renderizado de la escalera de riesgo con marcador de media (sanitizado)
-                for ticker, res in sorted(job_results.items(), key=lambda x: x[1].get("risk_score", 0)):
-                    sc = res.get("risk_score", 0)
-                    fill_color = "var(--red)" if sc >= 70 else ("var(--amber)" if sc >= 45 else "var(--green)")
+                for ticker, res in sorted(job_results.items(), key=lambda x: x[1].get("risk_score") or 0):
+                    sc = res.get("risk_score")
+                    sc_val = sc if sc is not None else 0
+                    fill_color = "var(--red)" if sc_val >= 70 else ("var(--amber)" if sc_val >= 45 else "var(--green)")
+                    score_display = f"{sc_val:.0f}/100" if sc is not None else "N/A"
                     ladder_html = f"""
                     <div class="ladder-row">
                         <div style="width:60px; font-weight:700; color:var(--hi);">${ticker}</div>
                         <div class="ladder-bar-bg">
-                            <div class="ladder-bar-fill" style="width:{sc}%; background:{fill_color};"></div>
+                            <div class="ladder-bar-fill" style="width:{sc_val}%; background:{fill_color};"></div>
                             <div class="ladder-avg-marker" style="left:{avg_score}%;" title="Portfolio Average ({avg_score:.1f})"></div>
                         </div>
-                        <div style="width:55px; text-align:right; color:{fill_color}; font-weight:700;">{sc:.0f}/100</div>
+                        <div style="width:55px; text-align:right; color:{fill_color}; font-weight:700;">{score_display}</div>
                     </div>
                     """
                     st.markdown(clean_html(ladder_html), unsafe_allow_html=True)

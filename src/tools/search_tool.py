@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 class FinancialSearchTool:
     """
     Herramienta agéntica de búsqueda web y consenso de analistas en tiempo real.
+    Implementa protocolo Fail-Closed: nunca simula datos ni genera titulares ficticios.
     """
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.TAVILY_API_KEY
@@ -27,15 +28,18 @@ class FinancialSearchTool:
         query: str, 
         max_results: int = 4,
         include_domains: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
-        """Busca noticias de mercado y catalizadores recientes."""
+    ) -> Dict[str, Any]:
+        """
+        Busca noticias de mercado y catalizadores recientes vía Tavily.
+        Protocolo Fail-Closed: ante fallas o falta de API key, reporta UNAVAILABLE.
+        """
         if not self.is_configured():
-            return [{
-                "title": "Fallback Context",
-                "url": "",
-                "content": "Tavily API no disponible. Operando bajo contexto interno estructurado.",
-                "score": 0.0
-            }]
+            return {
+                "status": "UNAVAILABLE",
+                "reason": "TAVILY_API_ERROR",
+                "message": "Tavily API no configurada en el entorno.",
+                "results": []
+            }
 
         default_domains = [
             "bloomberg.com", "reuters.com", "wsj.com", 
@@ -50,30 +54,43 @@ class FinancialSearchTool:
                 max_results=max_results,
                 include_domains=domains
             )
-            return [
+            raw_results = response.get("results", [])
+            clean_items = [
                 {
                     "title": item.get("title", "Sin título"),
                     "url": item.get("url", ""),
                     "content": item.get("content", ""),
                     "published_date": item.get("published_date", "N/A")
                 }
-                for item in response.get("results", [])
+                for item in raw_results
             ]
+            return {
+                "status": "SUCCESS",
+                "results": clean_items,
+                "count": len(clean_items)
+            }
         except Exception as e:
-            logger.warning(f"Fallback activado en search_market_news: {e}")
-            return [{"error": f"Fallo temporal de conexión con Tavily: {str(e)}"}]
+            logger.warning(f"Error en search_market_news: {e}")
+            return {
+                "status": "UNAVAILABLE",
+                "reason": "TAVILY_API_ERROR",
+                "message": f"Fallo en la consulta a Tavily: {str(e)}",
+                "results": []
+            }
 
     def get_analyst_consensus(self, ticker: str) -> Dict[str, Any]:
         """
-        Extrae el consenso de analistas de Wall Street, ratings y precios objetivo
-        recuperados en tiempo real (TipRanks, FactSet, analistas principales).
+        Extrae fragmentos fácticos del consenso de analistas de Wall Street y precios objetivo.
+        Protocolo Fail-Closed: si no hay datos o falla Tavily, reporta status UNAVAILABLE.
         """
         ticker = ticker.upper().replace("$", "")
         if not self.is_configured():
             return {
+                "status": "UNAVAILABLE",
+                "reason": "TAVILY_API_ERROR",
                 "ticker": ticker,
-                "consensus_status": "DATA_UNAVAILABLE",
-                "message": "Tavily no configurado."
+                "message": "Tavily API no configurada para extracción de consenso.",
+                "snippets": []
             }
 
         try:
@@ -85,17 +102,33 @@ class FinancialSearchTool:
                 include_domains=["tipranks.com", "marketwatch.com", "finance.yahoo.com", "cnbc.com"]
             )
             
-            snippets = [r.get("content", "") for r in response.get("results", [])]
+            snippets = [
+                r.get("content", "") 
+                for r in response.get("results", []) 
+                if r.get("content")
+            ]
+            
+            if not snippets:
+                return {
+                    "status": "UNAVAILABLE",
+                    "reason": "TAVILY_API_ERROR",
+                    "ticker": ticker,
+                    "message": f"No se encontraron reportes públicos de consenso para {ticker}.",
+                    "snippets": []
+                }
+
             return {
+                "status": "SUCCESS",
                 "ticker": ticker,
                 "source": "Wall Street Analyst Aggregation (via Tavily)",
-                "snippets": snippets,
-                "status": "SUCCESS"
+                "snippets": snippets
             }
         except Exception as e:
             logger.warning(f"Error consultando consenso de analistas para {ticker}: {e}")
             return {
+                "status": "UNAVAILABLE",
+                "reason": "TAVILY_API_ERROR",
                 "ticker": ticker,
-                "status": "FALLBACK",
-                "message": f"No se pudo consultar el consenso en vivo: {str(e)}"
+                "message": f"Fallo al recuperar consenso: {str(e)}",
+                "snippets": []
             }

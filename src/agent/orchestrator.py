@@ -16,7 +16,7 @@ class FinanzOrchestrator:
     Utiliza NVIDIA Nemotron 3 Ultra en Nebius Token Factory para coordinar
     auditorías cuantitativas, regulatorias y de consenso en un dossier unificado.
     """
-    def __init__(self):
+    def __init__(self, memory: AuditMemoryManager = None):
         self.client = OpenAI(
             base_url=settings.NEBIUS_BASE_URL,
             api_key=settings.NEBIUS_API_KEY
@@ -24,7 +24,7 @@ class FinanzOrchestrator:
         self.search_tool = FinancialSearchTool()
         self.sec_tool = SECTool()
         self.risk_tool = RiskEngineTool()
-        self.memory = AuditMemoryManager()
+        self.memory = memory or AuditMemoryManager()
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         return [
@@ -109,14 +109,14 @@ class FinanzOrchestrator:
                     )
                 return json.dumps(res, ensure_ascii=False)
             else:
-                return json.dumps({"error": f"Herramienta desconocida: {name}"})
+                return json.dumps({"status": "UNAVAILABLE", "reason": f"Herramienta desconocida: {name}"})
         except Exception as e:
-            return json.dumps({"error": f"Fallo al ejecutar {name}: {str(e)}"})
+            return json.dumps({"status": "UNAVAILABLE", "reason": "EXECUTION_ERROR", "message": str(e)})
 
     def run(self, user_prompt: str) -> str:
         """
         Bucle ReAct multi-hop (hasta 4 turnos iterativos).
-        Garantiza la síntesis de un dossier con matriz de decisión binaria y métricas de capital de trabajo.
+        Garantiza la síntesis de un dossier con integridad forense estricta y protocolo Fail-Closed.
         """
         comparative_context = self.memory.get_comparative_context()
 
@@ -125,7 +125,8 @@ Coordina tus herramientas (Tavily, analistas, SEC EDGAR y Risk Engine) para fund
 
 {comparative_context}
 
-REGLAS DE PRODUCCIÓN Y FORMATO:
+INTEGRIDAD FORENSE ESTRICTA Y PROTOCOLO FAIL-CLOSED:
+- Si una herramienta devuelve status 'UNAVAILABLE', declara explícitamente en el bloque correspondiente que el dato no está disponible por limitación de la fuente oficial. Queda TERMINANTEMENTE PROHIBIDO estimar, inventar, proyectar o rellenar cifras numéricas ausentes.
 - PROHIBIDO usar el signo '$' para cantidades monetarias (escribe 'USD 225', 'USD 105 B' o 'dólares'). Reserva el prefijo '$' exclusivamente para tickers bursátiles ($NVDA, $TSLA). Esto es mandatorio para evitar que el renderizador de Markdown rompa el texto interpretándolo como ecuaciones matemáticas.
 - PROHIBIDO emitir monólogos internos o narrar tus intenciones (NUNCA digas: "Now I will search...", "Let me retrieve..."). Si requieres herramientas, emite la llamada de función directamente.
 - Cuando tengas la información suficiente, genera SIEMPRE tu veredicto final en español estructurado exactamente en los siguientes 5 bloques:
@@ -143,17 +144,17 @@ REGLAS DE PRODUCCIÓN Y FORMATO:
    - Diagnóstico de Asimetría: Contraste entre el optimismo público de Wall Street y las métricas reales de riesgo/insiders.
 
 2. PRONÓSTICO CUANTITATIVO Y CONSENSO
-   - Precio actual y Consenso de Wall Street (Price Target promedio a 12 meses y % Upside proyectado).
+   - Precio actual y Consenso de Wall Street (Price Target promedio a 12 meses y % Upside proyectado). Si get_analyst_consensus devuelve únicamente fragmentos textuales (snippets) sin un promedio numérico estructurado, cita textualmente los rangos reportados indicando la fuente oficial. PROHIBIDO calcular un promedio matemático inventado.
    - Rango de 3 Escenarios: Bear Case (-1 std dev), Base Consenso, Bull Case (+1 std dev).
    - Probabilidad estimada a 3 meses de superar al S&P 500 (vs. 50.9% media histórica del mercado).
 
 3. AUDITORÍA FORENSE REGULATORIA Y CAPITAL DE TRABAJO (SEC EDGAR)
-   - Resumen de transacciones recientes Form 4: distinguir ventas programadas bajo regla 10b5-1 de salidas discrecionales en fortaleza.
+   - Resumen de transacciones recientes Form 4: si están disponibles, distinguir ventas programadas bajo regla 10b5-1 de salidas discrecionales. Si status es UNAVAILABLE, declarar limitación de la fuente.
    - 3 Factores de Estrés Contable y Capital de Trabajo:
      1. Calidad de conversión de utilidades (Free Cash Flow vs Net Income y ratio OCF/NI).
      2. Días de cobro de cuentas por cobrar (DSO) y variación de inventarios (DIO).
      3. Estructura de deuda neta y riesgos de financiamiento circular del ecosistema.
-   - Concentración de negocio y factores de riesgo clave del último 10-K/10-Q.
+   - Concentración de negocio y factores de riesgo clave del último 10-K/10-Q reportado.
 
 4. CATALIZADORES Y SENTIMIENTO EN VIVO (TAVILY)
    - Tailwinds operacionales (demanda de arquitectura, expansión de márgenes).
