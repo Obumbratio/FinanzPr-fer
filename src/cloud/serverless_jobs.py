@@ -4,7 +4,7 @@ import uuid
 import logging
 import threading
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from openai import OpenAI
 
 from src.config import settings
@@ -14,9 +14,9 @@ from src.tools.search_tool import FinancialSearchTool
 
 logger = logging.getLogger(__name__)
 
-class NebiusServerlessJobRunner:
+class AsyncBatchAuditRunner:
     """
-    Gestor y orquestador de tareas en segundo plano (Background Serverless Jobs).
+    Async batch audit runner using thread pool.
     Procesa Watchlists financieras por lotes sin bloquear el hilo principal ni la interfaz.
     """
     def __init__(self):
@@ -34,7 +34,7 @@ class NebiusServerlessJobRunner:
         Encola un trabajo por lotes para auditar múltiples activos de forma concurrente.
         Retorna el identificador único del Job (job_id).
         """
-        job_id = f"job-nebius-{uuid.uuid4().hex[:8]}"
+        job_id = f"batch-{uuid.uuid4().hex[:8]}"
         clean_watchlist = [t.strip().upper().replace("$", "") for t in watchlist if t.strip()]
 
         self.jobs[job_id] = {
@@ -44,7 +44,7 @@ class NebiusServerlessJobRunner:
             "watchlist": clean_watchlist,
             "total_items": len(clean_watchlist),
             "processed_items": 0,
-            "submitted_at": datetime.utcnow().isoformat(),
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
             "completed_at": None,
             "results": {},
             "errors": []
@@ -112,7 +112,7 @@ class NebiusServerlessJobRunner:
                     temperature=0.1
                 )
 
-                # Validación defensiva de respuesta
+                regime_label = risk_metrics.get("macro_regime") or risk_metrics.get("regime", "NORMAL_REGIME")
                 if (
                     response 
                     and response.choices 
@@ -123,7 +123,7 @@ class NebiusServerlessJobRunner:
                     job["results"][ticker] = {
                         "risk_score": risk_metrics.get("composite_risk_score"),
                         "risk_tier": risk_metrics.get("risk_tier"),
-                        "regime": risk_metrics.get("regime"),
+                        "regime": regime_label,
                         "insider_signals": insider_count,
                         "verdict": verdict,
                         "status": "COMPLETED"
@@ -132,7 +132,7 @@ class NebiusServerlessJobRunner:
                     job["results"][ticker] = {
                         "risk_score": risk_metrics.get("composite_risk_score"),
                         "risk_tier": risk_metrics.get("risk_tier"),
-                        "regime": risk_metrics.get("regime"),
+                        "regime": regime_label,
                         "insider_signals": insider_count,
                         "verdict": "Inferencia no disponible o nula devuelta por el modelo.",
                         "status": "FAILED"
@@ -154,7 +154,7 @@ class NebiusServerlessJobRunner:
             job["progress"] = round((idx / total) * 100, 1)
 
         job["status"] = "COMPLETED"
-        job["completed_at"] = datetime.utcnow().isoformat()
+        job["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     def get_job_status(self, job_id: str) -> Dict[str, Any]:
         """Consulta el estado, telemetría y porcentaje de avance de un trabajo."""
@@ -201,3 +201,8 @@ class NebiusServerlessJobRunner:
             )
 
         return "\n".join(md)
+
+
+# Alias para compatibilidad con código o tests previos
+NebiusServerlessJobRunner = AsyncBatchAuditRunner
+

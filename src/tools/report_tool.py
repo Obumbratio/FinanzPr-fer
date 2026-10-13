@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 class ReportGenerator:
@@ -8,7 +8,7 @@ class ReportGenerator:
     """
     @staticmethod
     def create_markdown_dossier(ticker: str, analysis_text: str, user_prompt: Optional[str] = None) -> str:
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         
         dossier = f"""# FINANZPRÜFER — AUDIT DOSSIER: ${ticker.upper()}
 **Date of Inspection:** {timestamp}  

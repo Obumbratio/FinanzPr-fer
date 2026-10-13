@@ -1,5 +1,10 @@
+import os
 import sys
 import time
+
+# Ensure project root is in sys.path when running standalone
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from src.config import settings
 from src.agent.orchestrator import FinanzOrchestrator
 

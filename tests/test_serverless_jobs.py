@@ -9,16 +9,16 @@ if sys.stdout.encoding != "utf-8":
         pass
 
 from src.config import settings
-from src.cloud.serverless_jobs import NebiusServerlessJobRunner
+from src.cloud.serverless_jobs import AsyncBatchAuditRunner
 
 def test_serverless_batch_execution():
     settings.validate_nebius()
     
     print("=" * 65)
-    print("FINANZPRÜFER: TEST DE SERVERLESS JOBS POR LOTES (NEBIUS CLOUD)")
+    print("FINANZPRÜFER: TEST DE AUDITORÍA BATCH ASÍNCRONA (THREAD POOL)")
     print("=" * 65)
 
-    runner = NebiusServerlessJobRunner()
+    runner = AsyncBatchAuditRunner()
     target_watchlist = ["NVDA", "TSLA", "MSFT"]
     
     print(f"Watchlist a procesar: {target_watchlist}")
