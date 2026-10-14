@@ -41,7 +41,7 @@ FinanzPrüfer (*"Financial Auditor"*) is envisioned as an institutional-grade, s
 | Component | Status | Notes |
 |---|:---:|---|
 | **Query Classifier & 3-Tier Routing** | ✅ Implemented | `scripts/smoke_routing.py` (14/14) and `scripts/smoke_routing_v2.py` (14/14) **PASS**. Exact precedence: explicit `$TICKER` / audit terms $\rightarrow$ Ultra; market overview $\rightarrow$ Ultra; single ticker $\rightarrow$ Super; education/personal planning $\rightarrow$ Nano. |
-| **FinanzOrchestrator ReAct Loop** | ✅ Implemented | Coordinates 11 JSON function tools, conversational memory, up to 4 multi-hop iterations on Nemotron 3 Ultra (`MODEL_REASONING`). Verified via `tests/test_agent_orchestrator.py` (**PASS**, 32.47s total execution). |
+| **FinanzOrchestrator ReAct Loop** | ✅ Implemented | Coordinates 12 JSON function tools, conversational memory, up to 4 multi-hop iterations on Nemotron 3 Ultra (`MODEL_REASONING`). Verified via `tests/test_agent_orchestrator.py` (**PASS**, 32.47s total execution). |
 | **SECTool (Form 4 XML)** | ✅ Implemented | Authentic SEC EDGAR Form 4 XML parser (`src/tools/sec_tool.py`). CIK mapping, raw XML downloading, 10b5-1 plan detection from tags and footnotes, net discretionary flow calculation, and circuit breaker. `scripts/smoke_sec_xml.py` **PASS** (NVDA & TSLA). |
 | **XBRLTool (US-GAAP)** | ✅ Implemented | Authentic SEC EDGAR XBRL companyconcept API parser (`src/tools/xbrl_tool.py`). Extracts US-GAAP balance sheet and cash flow statements; derives $OCF/NI$, DSO, DIO, net debt, and gross margin with 0.12s cooldown. `scripts/smoke_xbrl.py` **PASS** (NVDA, TSLA, AAPL). |
 | **RiskEngineTool** | ✅ Implemented | 5-factor quantitative model (`src/tools/risk_tool.py` + `src/tools/market_tool.py`). Real-time yfinance market snapshot, dynamic $\rho$ vs. SPY over 90d window, 4-state VIX regime, 12M log-normal Monte Carlo scenario envelopes, and normal CDF outperformance probability. `scripts/smoke_risk_engine.py` **PASS** and `scripts/smoke_market.py` **PASS**. |
@@ -65,7 +65,7 @@ FinanzPrüfer (*"Financial Auditor"*) is envisioned as an institutional-grade, s
 - [ ] Hard-enforce minimum tool invocation count (at least 4 mandatory tools before allowing final synthesis in the orchestrator loop).
 
 ### 2. Important — Feature parity
-- [ ] Align "serverless" terminology with reality (rename to "async batch runner" or document the local multi-threaded worker architecture).
+- [ ] ~~Align "serverless" terminology with reality~~ — **DONE:** class renamed to `AsyncBatchAuditRunner` with `NebiusServerlessJobRunner` kept as a backward-compatible alias; README carries an explicit implementation note.
 - [ ] Add strict 5-block section enforcement (prevent Nemotron from inventing unauthorized Blocks 6-7).
 - [ ] Implement Alpha Vantage fallback in `market_tool.py` for yfinance throttling.
 
@@ -81,7 +81,7 @@ FinanzPrüfer (*"Financial Auditor"*) is envisioned as an institutional-grade, s
 
 | Area | Score | Notes |
 |---|:---:|---|
-| **Agent Orchestration** | **90%** | Robust 3-tier classifier, ReAct loop, 11 tools, memory, cache. Lacks post-generation guardrails. |
+| **Agent Orchestration** | **90%** | Robust 3-tier classifier, ReAct loop, 12 tools, memory, cache. Lacks post-generation guardrails. |
 | **Financial Tools** | **95%** | All 7 tools verified with live production APIs. Zero synthetic data. |
 | **UI / Frontend** | **92%** | Sovereign Console design, telemetry, dual-tab, risk ladder. |
 | **Tests & Validation** | **85%** | 17/18 passed against live APIs. 1 provenance leak caught in `smoke_provenance.py`. |

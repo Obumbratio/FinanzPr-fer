@@ -80,7 +80,7 @@ Form 4 XML Filing     Historical    VIX 4      Market News  Consensus      XBRL 
 
 ## 4. Institutional Tool Arsenal
 
-The `FinanzOrchestrator` agent coordinates specialized institutional tools via JSON function calling with fail-closed error handling:
+The `FinanzOrchestrator` agent coordinates **12 specialized institutional tools** via JSON function calling with fail-closed error handling:
 
 | Tool | Source | Description |
 |---|---|---|
@@ -88,6 +88,7 @@ The `FinanzOrchestrator` agent coordinates specialized institutional tools via J
 | `get_analyst_consensus` | Financial Portals / Tavily | Wall Street price targets, consensus distribution, earnings estimates |
 | `get_recommendation_trends` | Finnhub API | Historical analyst rating evolution (buy/hold/sell over time) |
 | `get_insider_trades` | SEC EDGAR Form 4 XML | Direct insider filings, Rule 10b5-1 plan detection, executive alignment |
+| `get_institutional_flow` | Tavily / 13F Filings | Institutional 13F position changes, fund accumulation and distribution flow |
 | `calculate_risk_metrics` | Risk Engine & yfinance | 5-factor risk score, 60d realized volatility, VIX regime, 12M envelopes |
 | `get_fundamentals` | SEC EDGAR XBRL | Balance sheet metrics, OCF/NI ratio, DSO, DIO, net leverage |
 | `get_income_statement` | FMP API | Quarterly financials, margins, YoY growth |
@@ -240,7 +241,7 @@ For detailed evaluation notes and individual component assessments, consult [`ST
 
 | Area | Score | Status Summary |
 |---|:---:|---|
-| **Agent Orchestration** | **90%** | Robust 3-tier classifier, ReAct multi-hop loop, 11 tools, memory, cache. |
+| **Agent Orchestration** | **90%** | Robust 3-tier classifier, ReAct multi-hop loop, 12 tools, memory, cache. |
 | **Financial Tools** | **95%** | 7 domain tools verified with authentic production APIs. Zero synthetic data. |
 | **UI / Frontend** | **92%** | Sovereign Console design, real-time telemetry strip, dual-tab layout, and risk ladder. |
 | **Tests & Validation** | **85%** | 17/18 passed against live APIs. 1 provenance compliance leak identified. |
@@ -259,6 +260,7 @@ Based on the institutional status audit ([`STATUS.md`](STATUS.md)), the remainin
 - [ ] **Hard-Enforce Tool Invocations:** Automatically prompt Nemotron if fewer than 4 tools are called before final dossier synthesis.
 
 ### 2. Important (Feature Parity & Hardening)
+- [x] **Serverless Terminology Alignment:** The runner class is now named `AsyncBatchAuditRunner`, with `NebiusServerlessJobRunner` retained as a backward-compatible alias (`src/cloud/serverless_jobs.py:207`).
 - [ ] **Cloud Serverless Dispatcher:** Integrate an optional cloud serverless worker (e.g., Celery/Redis or Nebius Serverless Container API) alongside the current local multi-threaded engine.
 - [ ] **Strict 5-Block Output Parser:** Ensure the LLM strictly adheres to the 5 standard blocks without generating unauthorized supplementary sections.
 - [ ] **Alpha Vantage Fallback:** Wire `ALPHA_VANTAGE_API_KEY` in `src/tools/market_tool.py` as an automatic fallback if yfinance experiences rate limiting.
@@ -266,6 +268,7 @@ Based on the institutional status audit ([`STATUS.md`](STATUS.md)), the remainin
 ### 3. Polish (Production Quality)
 - [ ] **CSS Modularization:** Extract the 500+ lines of custom Sovereign Console CSS from `app.py` into a dedicated `styles/theme.css`.
 - [ ] **Persistent Storage:** Add optional SQLite/DuckDB backing to `ToolCache` and `AuditMemory` to persist state across Streamlit server reloads.
+- [ ] **Formalize pytest Runner:** Add `pytest` to `requirements.txt` and convert the five `tests/*.py` scripts (currently run as standalone `python` entrypoints) into collected test functions.
 - [ ] **PDF Dossier Generation:** Implement downloadable institutional PDF dossiers in addition to Markdown export.
 
 ---
@@ -283,12 +286,26 @@ Based on the institutional status audit ([`STATUS.md`](STATUS.md)), the remainin
 
 ---
 
-## 11. Legal & Ethical Disclaimer
+## 11. Repository Documentation Map
+
+| Document | Purpose |
+|---|---|
+| [`README.md`](README.md) | Platform overview, architecture, tool arsenal, quickstart, and verified test matrix. |
+| [`STATUS.md`](STATUS.md) | Institutional technical status audit: component-by-component state, roadmap, and 90% completion breakdown. |
+| [`AUDIT_REPORT.md`](AUDIT_REPORT.md) | Full file-by-file engineering audit (33 files reviewed, 9.2/10 code-quality score, dependency and security review). |
+| [`docs/FREE_API_KEYS.md`](docs/FREE_API_KEYS.md) | Step-by-step guide to provisioning the free-tier API keys (Tavily, Finnhub, FRED, FMP, Alpha Vantage). |
+| [`legal/DISCLAIMER.md`](legal/DISCLAIMER.md) | Full legal, educational-use, and no-financial-advice terms. |
+| [`.streamlit/config.toml`](.streamlit/config.toml) | Sovereign Console theme tokens (NVIDIA green `#76B900` on carbon `#0A0C09`, monospace). |
+| [`.env.example`](.env.example) | Credential template for all runtime integrations. |
+
+---
+
+## 12. Legal & Ethical Disclaimer
 
 **FinanzPrüfer** is an educational and research engineering platform created for the **Nebius × NVIDIA Global AI Hackathon**. It does not constitute financial, investment, legal, or tax advice. All analyses are generated autonomously from publicly available data sources (SEC EDGAR, market feeds, journalistic publications). Always consult a licensed financial professional before making investment decisions. See [`legal/DISCLAIMER.md`](legal/DISCLAIMER.md) for full terms.
 
 ---
 
-## 12. License
+## 13. License
 
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for complete terms.
